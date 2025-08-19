@@ -1,10 +1,12 @@
 {
   "name": "tig-middleware",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
+  "engines": { "node": ">=18" },
   "scripts": { "start": "node index.js" },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.18.3"
+    "express": "^4.18.3",
+    "node-fetch": "^3.3.2"
   }
 }
