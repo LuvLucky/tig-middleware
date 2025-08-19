@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import fetchPkg from "node-fetch";
+const fetchAny = globalThis.fetch || fetchPkg;
 
 const app = express();
 app.use(cors());
@@ -16,10 +18,20 @@ Unpredictable. If an inappropriate word would appear, replace the whole word wit
 Never output actual profanity or slurs. Output ONLY Tig’s line.
 `;
 
+app.get("/", (_, res) => res.send("Tig middleware up"));
+
+app.get("/diag", (_, res) => {
+  res.json({
+    ok: true,
+    hasKey: Boolean(OPENAI_API_KEY),
+    model: MODEL
+  });
+});
+
 app.post("/chat", async (req, res) => {
   try {
-    if (!OPENAI_API_KEY) return res.status(500).json({ text: "…uh i forgot" });
     const { userText, facts, history } = req.body || {};
+    if (!OPENAI_API_KEY) return res.status(500).json({ text: "…uh i forgot" });
     if (typeof userText !== "string") return res.status(400).json({ text: "…uh" });
 
     const shortHistory = Array.isArray(history) ? history.slice(-10) : [];
@@ -30,7 +42,7 @@ app.post("/chat", async (req, res) => {
       { role: "user", content: userText }
     ];
 
-    const resp = await fetch(OPENAI_CHAT_URL, {
+    const r = await fetchAny(OPENAI_CHAT_URL, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${OPENAI_API_KEY}`,
@@ -47,14 +59,21 @@ app.post("/chat", async (req, res) => {
       })
     });
 
-    if (!resp.ok) return res.status(500).json({ text: "…uh i forgot" });
-    const data = await resp.json();
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      console.error("OpenAI error:", r.status, t);
+      return res.status(500).json({ text: "…uh i forgot" });
+    }
+
+    const data = await r.json();
     const text = data?.choices?.[0]?.message?.content?.trim?.() || "…uh";
     res.json({ text: text.slice(0, 240) });
-  } catch {
+  } catch (e) {
+    console.error("Server error:", e);
     res.status(500).json({ text: "…uh i forgot" });
   }
 });
 
-app.get("/", (_, res) => res.send("Tig middleware up"));
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Tig middleware listening");
+});
