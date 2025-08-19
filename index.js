@@ -19,13 +19,8 @@ Never output actual profanity or slurs. Output ONLY Tig’s line.
 `;
 
 app.get("/", (_, res) => res.send("Tig middleware up"));
-
 app.get("/diag", (_, res) => {
-  res.json({
-    ok: true,
-    hasKey: Boolean(OPENAI_API_KEY),
-    model: MODEL
-  });
+  res.json({ ok: true, hasKey: Boolean(OPENAI_API_KEY), model: MODEL });
 });
 
 app.post("/chat", async (req, res) => {
