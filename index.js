@@ -1,4 +1,4 @@
-// index.js
+// index.js — flexible env var support
 
 import express from "express";
 import cors from "cors";
@@ -9,51 +9,44 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Environment
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// 🔑 Flexible: look for OPENAI_API_KEY first, but also accept TIGMIDDLEWARE or GENERIC_KEY
+const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || process.env.TIGMIDDLEWARE || process.env.GENERIC_KEY || "").trim();
 const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
-const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const MODEL = (process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
 
-// Tig personality system prompt
 const TIG_SYSTEM = `
 You are Tig. Plain, simple, sometimes blank or forgetful. 
-You repeat or mix words you hear.
-Give small random tips; sometimes a brief sophisticated aside. 
-Keep answers short: 1–2 sentences (3 max).
-Be unpredictable. Sometimes answer, sometimes say "uhh I forgot".
-If an inappropriate word would appear, replace the whole word with "[BLURRED]".
-Never output actual profanity or slurs.
-Output ONLY Tig’s line.
+You repeat or mix words you hear. Give small random tips; sometimes a brief sophisticated aside. 
+Keep answers short: 1–3 sentences (3 max). Be unpredictable. Sometimes answer, sometimes say "…uh i forgot". 
+If an inappropriate word would appear, replace the whole word with "[BLURRED]". 
+Never output actual profanity or slurs. Output ONLY Tig’s line.
 `;
 
-// Root check
+// Health
 app.get("/", (_, res) => res.send("Tig middleware up"));
 
-// Debug check
+// Diagnostics
 app.get("/diag", (_, res) => {
   res.json({
     ok: true,
-    hasKey: Boolean(OPENAI_API_KEY),
+    hasKey: Boolean(OPENAI_API_KEY && OPENAI_API_KEY.startsWith("sk-")),
+    keyPreview: OPENAI_API_KEY ? OPENAI_API_KEY.slice(0, 7) + "..." : "none",
     model: MODEL
   });
 });
 
-// Chat endpoint
+// Chat route
 app.post("/chat", async (req, res) => {
   try {
     const { userText, facts, history } = req.body || {};
-
     if (!OPENAI_API_KEY) {
-      return res.status(500).json({ text: "…uh i forgot" });
+      return res.status(500).json({ text: "…uh i forgot", debug: "missing API key" });
     }
     if (typeof userText !== "string") {
-      return res.status(400).json({ text: "…uh" });
+      return res.status(400).json({ text: "…uh", debug: "userText must be string" });
     }
 
-    // Keep only last 10 history items
     const shortHistory = Array.isArray(history) ? history.slice(-10) : [];
-
-    // Messages to send to OpenAI
     const messages = [
       { role: "system", content: TIG_SYSTEM },
       { role: "user", content: `Player facts: ${JSON.stringify(facts || {}).slice(0,500)}` },
@@ -61,7 +54,6 @@ app.post("/chat", async (req, res) => {
       { role: "user", content: userText }
     ];
 
-    // Call OpenAI API
     const r = await fetchAny(OPENAI_CHAT_URL, {
       method: "POST",
       headers: {
@@ -71,31 +63,30 @@ app.post("/chat", async (req, res) => {
       body: JSON.stringify({
         model: MODEL,
         messages,
-        temperature: 1.0,
-        top_p: 0.9,
-        max_tokens: 80,
-        presence_penalty: 0.7,
-        frequency_penalty: 0.4
+        temperature: 0.95,
+        max_tokens: 80
       })
     });
 
+    const bodyText = await r.text();
     if (!r.ok) {
-      const t = await r.text().catch(() => "");
-      console.error("OpenAI error:", r.status, t);
-      return res.status(500).json({ text: "…uh i forgot" });
+      console.error("OpenAI error:", r.status, bodyText);
+      return res.status(500).json({
+        text: "…uh i forgot",
+        debugStatus: r.status,
+        debugBody: bodyText.slice(0, 200)
+      });
     }
 
-    const data = await r.json();
+    const data = JSON.parse(bodyText);
     const text = data?.choices?.[0]?.message?.content?.trim?.() || "…uh";
     res.json({ text: text.slice(0, 240) });
-
   } catch (e) {
     console.error("Server error:", e);
-    res.status(500).json({ text: "…uh i forgot" });
+    res.status(500).json({ text: "…uh i forgot", debug: String(e) });
   }
 });
 
-// Start server
 app.listen(process.env.PORT || 3000, () => {
   console.log("Tig middleware listening");
 });
